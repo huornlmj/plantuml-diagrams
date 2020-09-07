@@ -25,7 +25,7 @@ participant "First Class" as A
 participant "Second Class" as B
 participant "Last Class" as C
 
-User -> A: DoLotsOfWork
+User -> A: DoSomeWork
 activate A
 
 A -> B: Create Request
