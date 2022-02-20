@@ -1,0 +1,147 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+
+AddRelTag("tbc", $lineStyle = DottedLine(), $legendText="Trust boundary crossing (dotted line)")
+AddElementTag("threat", $bgColor="#ff0000", $legendText="Threat")
+'AddRelTag("3", $lineStyle = DottedLine(), $legendText="Volume mount (read)")
+
+LAYOUT_LEFT_RIGHT()
+HIDE_STEREOTYPE()
+'skinparam linetype ortho
+'skinparam linetype polyline
+
+'------------------------------------------------------------------------------
+
+System_Boundary(additional_node, "Additional node"){
+    Container_Ext(additional_node_etcd, "etcd")
+    Container_Ext(additional_prometheus, "Prometheus")
+}
+System_Boundary(user_utilities, "User utilities")
+
+'------------------------------------------------------------------------------
+
+System_Boundary(controller_host, "Controller node host boundary"){
+    System_Ext(unknown_client, "Unknown client", $tags="threat")
+    Node(controller_host_root, "/", "Operating system"){
+        Node(controller_host_sys, "sys/")
+        Node(controller_host_proc, "proc/")
+    }
+    System_Boundary(controller_k8, "BMRA k8s controller node"){
+        System_Ext(controller_etcd, "etcd"){
+            Container_Ext(controller_etcd_tcp_2379, "TCP:2379")
+            Container_Ext(controller_etcd_tcp_2380, "TCP:2380")
+        }
+        System_Ext(controller_kublet, "Kubelet"){
+            Container_Ext(controller_kublet_tcp_10250, "TCP:10250")
+        }
+        System_Ext(controller_k8s_api, "K8s API server"){
+            Container_Ext(controller_k8s_api_tcp_6443, "TCP:6443")
+        }
+        Container(controller_prometheus_node_exporter_container, "Prometheus node exporter container"){
+            Node(controller_prometheus_node_exporter_container_root, "/host/", "File system"){
+                Node(controller_prometheus_node_exporter_container_sys, "sys/")
+                Node(controller_prometheus_node_exporter_container_proc, "proc/")
+            }
+            System(prometheus_node_exporter, "Prometheus node exporter"){
+                Container(prometheus_node_exporter_tcp_9100, "TCP:9100")
+            }
+        }
+        System_Boundary(controller_calico_pod, "Calico node pod"){
+            Container(controller_calico_container, "Calico container"){
+                System(controller_calico, "Calico daemon"){
+                    Container(controller_calico_tcp_179, "TCP:179")
+                }
+            }
+        }
+        Container(controller_kube_prometheus_grafana, "Kube Prometheus Grafana"){
+            System_Ext(controller_grafana, "Grafana"){
+                Container_Ext(controller_grafana_tcp_30000, "TCP:3000", "loopback")
+            }
+        }
+    }
+}
+
+'------------------------------------------------------------------------------
+
+System_Boundary(worker_host, "Worker node host boundary"){
+    Node(worker_host_root, "/", "Operating system"){
+        Node(worker_host_sys, "sys/"){
+            Node(worker_host_sys_kernel_debug, "kernel/debug/")
+            Node(worker_host_sys_fs_resctrl, "fs/resctrl")
+        }
+        Node(worker_host_telegraf_fullname, "{telegraf.fullname}")
+        Node(worker_host_var_run_utmp, "var/run/utmp/")
+        Node(worker_host_run_udev, "run/udev/")
+        Node(worker_host_proc, "proc/")
+    }
+    System_Boundary(worker_k8, "BMRA k8s worker node"){
+        Container(worker_telegraph_container, "Telegraf container"){
+            Node(worker_telegraph_container_root, "/"){
+                Node(worker_telegraph_container_etc_telegraf, "etc/telegraf/")
+                Node(worker_telegraph_container_sys, "sys/"){
+                    Node(worker_telegraph_container_sys_fs_resctrl, "fs/resctrl/")
+                    Node(worker_telegraph_container_sys_kernel_debug, "kernel/debug/")
+                }
+                Node(worker_telegraph_container_hostfs, "hostfs/"){
+                    Node(worker_telegraph_container_hostfs_var_run_utmp, "var/run/utmp/")
+                }
+                Node(worker_telegraph_container_run_udev, "run/udev/")
+            }
+            System_Ext(worker_telegraph, "Telegraph", "Process"){
+                Container(worker_telegraph_tcp_9273, "TCP:9273")
+            }
+        }
+        Container(worker_prometheus_node_exporter_container, "Prometheus node exporter container"){
+            Node(worker_prometheus_node_exporter_container_root, "/host/", "File system"){
+                Node(worker_prometheus_node_exporter_container_sys, "sys/")
+                Node(worker_prometheus_node_exporter_container_proc, "proc/")
+            }
+            System(worker_prometheus_node_exporter, "Prometheus node exporter"){
+                Container(worker_prometheus_node_exporter_tcp_9100, "TCP:9100")
+            }
+        }
+
+        System_Ext(worker_kublet, "Kubelet"){
+            Container_Ext(worker_kublet_tcp_10250, "TCP:10250")
+        }
+        System_Boundary(worker_calico_pod, "Calico node pod"){
+            Container(worker_calico_container, "Calico container"){
+                System(worker_calico, "Calico daemon"){
+                    Container(worker_calico_tcp_179, "TCP:179")
+                }
+            }
+        }
+    }
+}
+
+'------------------------------------------------------------------------------
+
+Rel(additional_prometheus, prometheus_node_exporter_tcp_9100, "MTLS")
+Rel(controller_prometheus_node_exporter_container_proc, controller_host_proc, "Volume mount", "R+W")
+Rel(controller_prometheus_node_exporter_container_sys, controller_host_sys, "Volume mount", "R+W")
+Rel(controller_prometheus_node_exporter_container_root, controller_host_root, "Volume mount", "R")
+Rel(controller_calico, worker_calico_tcp_179, "BGP", "Plaintext")
+Rel(worker_calico, controller_calico_tcp_179, "BGP", "Plaintext")
+Rel(unknown_client,controller_grafana_tcp_30000, "?")
+Rel(controller_k8s_api, worker_kublet_tcp_10250, "HTTPS")
+Rel(worker_kublet, controller_k8s_api_tcp_6443, "HTTPS")
+Rel(controller_kublet, controller_k8s_api_tcp_6443, "HTTPS")
+Rel(controller_k8s_api, controller_kublet_tcp_10250, "HTTPS")
+Rel(additional_node_etcd, controller_etcd_tcp_2379, "MTLS")
+Rel(additional_node_etcd, controller_etcd_tcp_2380, "MTLS")
+Rel(worker_prometheus_node_exporter_container_proc, worker_host_proc, "Volume mount", "R+W")
+Rel(worker_prometheus_node_exporter_container_sys, worker_host_sys, "Volume mount", "R+W")
+Rel(worker_prometheus_node_exporter_container_root, worker_host_root, "Volume mount", "R")
+Rel(worker_telegraph_container_etc_telegraf, worker_host_telegraf_fullname, "Volume mount", "R")
+Rel(worker_telegraph_container_sys_fs_resctrl, worker_host_sys_fs_resctrl, "Volume mount", "R+")
+Rel(worker_telegraph_container_sys_kernel_debug, worker_host_sys_kernel_debug, "Volume mount", "R")
+Rel(worker_telegraph_container_hostfs_var_run_utmp, worker_host_var_run_utmp, "Volume mount", "R")
+Rel(worker_telegraph_container_run_udev, worker_host_run_udev, "Volume mount", "R")
+Rel(user_utilities, controller_k8s_api_tcp_6443, "HTTPS")
+
+
+'------------------------------------------------------------------------------
+
+SHOW_LEGEND()
+
+@enduml
